@@ -28,27 +28,28 @@ class DatasetFromFolder(torch.utils.data.Dataset):
         self.target_transform = target_transform
 
     def __getitem__(self, index):
-        input = load_img(self.image_filenames[index])
-        target = input.copy()
-        if self.input_transform:
-            input = self.input_transform(input)
-        if self.target_transform:
+        input_ = load_img(self.image_filenames[index])
+        target = input_.copy()
+        if self.input_transform is not None:
+            input_ = self.input_transform(input_)
+        if self.target_transform is not None:
             target = self.target_transform(target)
 
-        return input, target
+        return input_, target
 
     def __len__(self):
         return len(self.image_filenames)
 
 
 def calculate_valid_crop_size(crop_size, upscale_factor):
+    # 把它整成可以整除的亚子
     return crop_size - (crop_size % upscale_factor)
 
 
 def img_transform(crop_size, upscale_factor=1):
     return transforms.Compose([
-        transforms.Scale(crop_size // upscale_factor),
-        transforms.CenterCrop(crop_size // upscale_factor),
+        transforms.Resize(crop_size // upscale_factor), # smaller edge of the image will be matched to this number
+        transforms.CenterCrop(crop_size // upscale_factor), # 进行中心裁剪
         transforms.ToTensor()])
 
 

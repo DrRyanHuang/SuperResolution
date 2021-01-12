@@ -27,7 +27,7 @@ def create_loss_model(vgg, end_layer, use_maxpool=True, use_cuda=False):
     model = nn.Sequential()
 
     if use_cuda:
-        model.cuda(device_id=0)
+        model.cuda(device=0)
 
     i = 0
     for layer in list(vgg):
@@ -37,7 +37,7 @@ def create_loss_model(vgg, end_layer, use_maxpool=True, use_cuda=False):
 
         if isinstance(layer, nn.Conv2d):
             name = "conv_" + str(i)
-            model.add_module(name, layer)
+            model.add_module(name, layer) # 传的是引用!!!
 
         if isinstance(layer, nn.ReLU):
             name = "relu_" + str(i)
@@ -59,10 +59,10 @@ class ResidualBlock(nn.Module):
     def __init__(self, num, use_cuda=False):
         super(ResidualBlock, self).__init__()
         if use_cuda:
-            self.c1 = nn.Conv2d(num, num, kernel_size=3, stride=1, padding=1).cuda(device_id=0)
-            self.c2 = nn.Conv2d(num, num, kernel_size=3, stride=1, padding=1).cuda(device_id=0)
-            self.b1 = nn.BatchNorm2d(num).cuda(device_id=0)
-            self.b2 = nn.BatchNorm2d(num).cuda(device_id=0)
+            self.c1 = nn.Conv2d(num, num, kernel_size=3, stride=1, padding=1).cuda(device=0)
+            self.c2 = nn.Conv2d(num, num, kernel_size=3, stride=1, padding=1).cuda(device=0)
+            self.b1 = nn.BatchNorm2d(num).cuda(device=0)
+            self.b2 = nn.BatchNorm2d(num).cuda(device=0)
         else:
             self.c1 = nn.Conv2d(num, num, kernel_size=3, stride=1, padding=1)
             self.c2 = nn.Conv2d(num, num, kernel_size=3, stride=1, padding=1)
@@ -80,9 +80,9 @@ class UpsampleBlock(nn.Module):
     def __init__(self, num, use_cuda=False):
         super(UpsampleBlock, self).__init__()
         if use_cuda:
-            self.up1 = nn.UpsamplingNearest2d(scale_factor=2).cuda(device_id=0)
-            self.c2 = nn.Conv2d(num, num, kernel_size=3, stride=1, padding=0).cuda(device_id=0)
-            self.b3 = nn.BatchNorm2d(num).cuda(device_id=0)
+            self.up1 = nn.UpsamplingNearest2d(scale_factor=2).cuda(device=0) # in favor of interpolate
+            self.c2 = nn.Conv2d(num, num, kernel_size=3, stride=1, padding=0).cuda(device=0)
+            self.b3 = nn.BatchNorm2d(num).cuda(device=0)
         else:
             self.up1 = nn.UpsamplingNearest2d(scale_factor=2)
             self.c2 = nn.Conv2d(num, num, kernel_size=3, stride=1, padding=0)
@@ -107,8 +107,8 @@ class SuperRes4x(nn.Module):
 
         # Downsizing layer
         if use_cuda:
-            self.c1 = nn.Conv2d(3, 64, kernel_size=9, stride=1, padding=4).cuda(device_id=0)
-            self.b2 = nn.BatchNorm2d(64).cuda(device_id=0)
+            self.c1 = nn.Conv2d(3, 64, kernel_size=9, stride=1, padding=4).cuda(device=0)
+            self.b2 = nn.BatchNorm2d(64).cuda(device=0)
         else:
             self.c1 = nn.Conv2d(3, 64, kernel_size=9, stride=1, padding=4)
             self.b2 = nn.BatchNorm2d(64)
@@ -123,10 +123,10 @@ class SuperRes4x(nn.Module):
             self.rs = [ResidualBlock(64, use_cuda=use_cuda) for i in range(4)]
             # Transposed convolution blocks
             if self.use_cuda:
-                self.dc2 = nn.ConvTranspose2d(64, 64, kernel_size=4, stride=2, padding=1).cuda(device_id=0)
-                self.bc2 = nn.BatchNorm2d(64).cuda(device_id=0)
-                self.dc3 = nn.ConvTranspose2d(64, 64, kernel_size=4, stride=2, padding=1).cuda(device_id=0)
-                self.bc3 = nn.BatchNorm2d(64).cuda(device_id=0)
+                self.dc2 = nn.ConvTranspose2d(64, 64, kernel_size=4, stride=2, padding=1).cuda(device=0)
+                self.bc2 = nn.BatchNorm2d(64).cuda(device=0)
+                self.dc3 = nn.ConvTranspose2d(64, 64, kernel_size=4, stride=2, padding=1).cuda(device=0)
+                self.bc3 = nn.BatchNorm2d(64).cuda(device=0)
             else:
                 self.dc2 = nn.ConvTranspose2d(64, 64, kernel_size=4, stride=2, padding=1)
                 self.bc2 = nn.BatchNorm2d(64)
@@ -135,7 +135,7 @@ class SuperRes4x(nn.Module):
 
         # Last convolutional layer
         if use_cuda:
-            self.c3 = nn.Conv2d(64, 3, kernel_size=9, stride=1, padding=4).cuda(device_id=0)
+            self.c3 = nn.Conv2d(64, 3, kernel_size=9, stride=1, padding=4).cuda(device=0)
         else:
             self.c3 = nn.Conv2d(64, 3, kernel_size=9, stride=1, padding=4)
 
@@ -158,7 +158,7 @@ class SuperRes4x(nn.Module):
             h = F.relu(self.bc3(self.dc3(h)))
 
         # Last layer and scaled tanh activation - Scaled from 0 to 1 instead of 0 - 255
-        h = F.tanh(self.c3(h))
+        h = torch.tanh(self.c3(h))
         h = torch.add(h, 1.)
         h = torch.mul(h, 0.5)
         return h

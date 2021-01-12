@@ -13,15 +13,16 @@ from torch.utils.data import DataLoader
 from torchvision import models
 from torch.autograd import Variable
 
-from model_utils import *
-from model import *
+import model_utils
+import model as model_
+# from model import ResidualBlock, SuperRes4x, UpsampleBlock
 
 
 def train_SuperRes(model, optimizer, loader, epochs=1, use_vgg_loss=True, use_cuda=False, save_best=True):
 
     model.train()
 
-    loss_fn = nn.MSELoss(size_average=False)
+    loss_fn = nn.MSELoss(reduction='sum')
 
     best_loss = 1e6
 
@@ -33,8 +34,8 @@ def train_SuperRes(model, optimizer, loader, epochs=1, use_vgg_loss=True, use_cu
         for iteration, batch in enumerate(loader, 1):
             inp, tgt = Variable(batch[0]), Variable(batch[1])
             if use_cuda:
-                inp = inp.cuda(device_id=0)
-                tgt = tgt.cuda(device_id=0)
+                inp = inp.cuda(device=0)
+                tgt = tgt.cuda(device=0)
 
             # Forward
             pred = model(inp)
@@ -48,7 +49,7 @@ def train_SuperRes(model, optimizer, loader, epochs=1, use_vgg_loss=True, use_cu
                 loss = loss_fn(pred, tgt)
 
             # Update loss
-            epoch_loss += loss.data[0]
+            epoch_loss += loss.item()
 
             # Backward pass
             optimizer.zero_grad()
@@ -63,13 +64,14 @@ def train_SuperRes(model, optimizer, loader, epochs=1, use_vgg_loss=True, use_cu
 
         if save_best and epoch_loss < best_loss:
             print("Saving model at epoch: {}".format(epoch))
-            torch.save(model, "best_model.pth")
+            torch.save(model.state_dict(), "best_model.pth")
             best_loss = epoch_loss
 
         epoch[0] += 1
 
 
-if __name__ == '__main__':
+def arg_parse():
+    
     parser = argparse.ArgumentParser()
     parser.add_argument(
         '--mode',
@@ -100,7 +102,7 @@ if __name__ == '__main__':
     )
     parser.add_argument(
         '--l_rate',
-        type=int,
+        type=float,
         nargs='?',
         default=1e-3,
         help='Learning rate for training. Default is 1e-3.'
@@ -121,6 +123,12 @@ if __name__ == '__main__':
     )
 
     args = parser.parse_args()
+    return args
+
+
+if __name__ == '__main__':
+    
+    args = arg_parse()
     if args.mode not in ['train', 'upsample']:
         print ("Please choose \'train\' or \'upsample\' as mode")
         sys.exit()
@@ -139,31 +147,31 @@ if __name__ == '__main__':
         dtype = torch.cuda.FloatTensor if use_cuda else torch.FloatTensor
 
         # Load training dataset
-        train_dataset = get_training_set(path=args.image_folder,
-                                         hr_size=args.hi_res_size,
-                                         upscale_factor=4)
+        train_dataset = model_utils.get_training_set(path=args.image_folder,
+                                                     hr_size=args.hi_res_size,
+                                                     upscale_factor=4)
         if use_cuda:
             train_data_loader = DataLoader(dataset=train_dataset,
-                                           num_workers=4,
+                                           num_workers=0,
                                            batch_size=8,
                                            shuffle=True)
         else:
             train_data_loader = DataLoader(dataset=train_dataset,
-                                           num_workers=4,
+                                           num_workers=0,
                                            batch_size=1,
                                            shuffle=True)
 
         # Create VGG model for loss function
         vgg16 = models.vgg16(pretrained=True).features
         if use_cuda:
-            vgg16.cuda(device_id=0);
+            vgg16.cuda(device=0)
 
-        vgg_loss = create_loss_model(vgg16, 8, use_cuda=use_cuda)
+        vgg_loss = model_.create_loss_model(vgg16, 8, use_cuda=use_cuda)
 
         for param in vgg_loss.parameters():
-            param.requires_grad = False
+            param.requires_grad = False # 也就是这里的VGG参数不更新
 
-        model = SuperRes4x(use_cuda=use_cuda)
+        model = model_.SuperRes4x(use_cuda=use_cuda)
         optimizer = optim.Adam(model.parameters(), lr=args.l_rate)
         train_SuperRes(model, optimizer, train_data_loader, use_cuda=use_cuda,
                        epochs=args.trn_epochs, use_vgg_loss=False)
@@ -184,10 +192,11 @@ if __name__ == '__main__':
         use_cuda = torch.cuda.is_available()
         dtype = torch.cuda.FloatTensor if use_cuda else torch.FloatTensor
 
-        model = SuperRes4x(use_cuda=use_cuda)
-        model = torch.load(args.model)
+        # SuperRes4x__ = model_.SuperRes4x(use_cuda=use_cuda)
+        # from model import *
+        # SuperRes4x__.load_state_dict(torch.load(args.model))
 
-        image = image_loader(args.target_image).type(dtype)
+        image = model_utils.image_loader(args.target_image).type(dtype)
         upsampled = model(image)
 
         if use_cuda:
@@ -200,3 +209,11 @@ if __name__ == '__main__':
         upsampled = np.array(upsampled * 255, dtype=np.uint8)
         upsampled = Image.fromarray(upsampled, 'RGB')
         upsampled.save('up_' + args.target_image.split('/')[-1])
+
+
+'''
+debugfile('/home/ryan/code/SuperResolution/run.py', 
+          wdir='/home/ryan/code/SuperResolution', 
+          args='--mode train --image_folder /home/ryan/Dataset/VOCdevkit/VOC2007/JPEGImages --trn_epochs 1 --l_rate 0.01')
+'''
+
