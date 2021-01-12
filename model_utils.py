@@ -85,4 +85,4 @@ def image_loader(image_name, max_sz=256):
 
     image = Variable(loader(r_image))
 
-    return image.unsqueeze(0)
+    return image.unsqueeze(0) # 最后再加一维

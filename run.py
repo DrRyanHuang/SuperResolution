@@ -67,6 +67,8 @@ def train_SuperRes(model, optimizer, loader, device, epochs=1, use_vgg_loss=True
             best_loss = epoch_loss
 
         epoch[0] += 1
+        
+    torch.save(model.state_dict(), "best_model_funny.pth")
 
 
 def arg_parse():
@@ -124,7 +126,7 @@ def arg_parse():
         '--gpu-id',
         type=int,
         nargs='?',
-        default=1,
+        default=0,
         help='GPU device id for training. Default is 0'
     )
 
@@ -157,7 +159,7 @@ if __name__ == '__main__':
                                                      hr_size=args.hi_res_size,
                                                      upscale_factor=4)
         train_data_loader = DataLoader(dataset=train_dataset,
-                                       num_workers=0,
+                                       num_workers=4,
                                        batch_size=(8 if use_cuda else 1),
                                        shuffle=True,
                                        drop_last=True)
@@ -173,6 +175,8 @@ if __name__ == '__main__':
             param.requires_grad = False # 也就是这里的VGG参数不更新
 
         model = model_.SuperRes4x(device)
+        if args.model is not None:
+            model.load_state_dict(torch.load(args.model))
         optimizer = optim.Adam(model.parameters(), lr=args.l_rate)
         train_SuperRes(model, optimizer, train_data_loader, device,
                        epochs=args.trn_epochs, use_vgg_loss=True)
@@ -191,13 +195,12 @@ if __name__ == '__main__':
             print("using model: {} \n".format(args.model))
 
         use_cuda = torch.cuda.is_available()
-        dtype = torch.cuda.FloatTensor if use_cuda else torch.FloatTensor
+        device = torch.device("cuda:{}".format(args.gpu_id) if use_cuda else "cpu")
 
-        # SuperRes4x__ = model_.SuperRes4x(use_cuda=use_cuda)
-        # from model import *
-        # SuperRes4x__.load_state_dict(torch.load(args.model))
+        model = model_.SuperRes4x(device)
+        model.load_state_dict(torch.load(args.model))
 
-        image = model_utils.image_loader(args.target_image).type(dtype)
+        image = model_utils.image_loader(args.target_image).to(device)
         upsampled = model(image)
 
         if use_cuda:
@@ -205,8 +208,7 @@ if __name__ == '__main__':
         else:
             upsampled = upsampled.data.numpy().squeeze()
 
-        upsampled = np.swapaxes(upsampled, 0, 2)
-        upsampled = np.swapaxes(upsampled, 0, 1)
+        upsampled = upsampled.transpose(1, 2, 0)
         upsampled = np.array(upsampled * 255, dtype=np.uint8)
         upsampled = Image.fromarray(upsampled, 'RGB')
         upsampled.save('up_' + args.target_image.split('/')[-1])
@@ -219,3 +221,9 @@ debugfile('/home/ryan/code/SuperResolution/run.py',
           args='--mode train --image_folder /home/ryan/Dataset/VOCdevkit/VOC2007/JPEGImages --trn_epochs 1 --l_rate 0.01')
 '''
 
+'''
+# 你在 spyder 里的调试信息
+debugfile('/home/ryan/code/SuperResolution/run.py', 
+          wdir='/home/ryan/code/SuperResolution', 
+          args='--model best_model_funny.pth --target_image /home/s/Documents/test2017/000000000057.jpg')
+'''
