@@ -1,3 +1,5 @@
+# 该程序只适合单卡
+
 import argparse
 import os
 import sys
@@ -18,7 +20,7 @@ import model as model_
 # from model import ResidualBlock, SuperRes4x, UpsampleBlock
 
 
-def train_SuperRes(model, optimizer, loader, epochs=1, use_vgg_loss=True, use_cuda=False, save_best=True):
+def train_SuperRes(model, optimizer, loader, device, epochs=1, use_vgg_loss=True, save_best=True):
 
     model.train()
 
@@ -32,10 +34,7 @@ def train_SuperRes(model, optimizer, loader, epochs=1, use_vgg_loss=True, use_cu
         epoch_loss = 0
 
         for iteration, batch in enumerate(loader, 1):
-            inp, tgt = Variable(batch[0]), Variable(batch[1])
-            if use_cuda:
-                inp = inp.cuda(device=0)
-                tgt = tgt.cuda(device=0)
+            inp, tgt = Variable(batch[0]).to(device), Variable(batch[1]).to(device)
 
             # Forward
             pred = model(inp)
@@ -57,7 +56,7 @@ def train_SuperRes(model, optimizer, loader, epochs=1, use_vgg_loss=True, use_cu
             optimizer.step()
 
             if iteration % 100 == 0:
-                print("===> Epoch[{}]({}/{}): Loss: {:.4f}".format(epoch, iteration, len(loader), loss.data[0]))
+                print("===> Epoch[{}]({}/{}): Loss: {:.4f}".format(epoch, iteration, len(loader), loss.item()))
 
         if epoch[0] % 1 == 0:
             print("===> Epoch {} Complete: Avg. Loss: {:.4f}".format(epoch, epoch_loss / len(loader)))
@@ -121,6 +120,13 @@ def arg_parse():
         default='',
         help='Path to saved model file.'
     )
+    parser.add_argument(
+        '--gpu-id',
+        type=int,
+        nargs='?',
+        default=1,
+        help='GPU device id for training. Default is 0'
+    )
 
     args = parser.parse_args()
     return args
@@ -141,40 +147,35 @@ if __name__ == '__main__':
         else:
             print ("running in mode: {}".format(args.mode))
             print ("training folder: {} \n".format(args.image_folder))
-
+        
         # Define if flag to use GPU and dtype for variables
         use_cuda = torch.cuda.is_available()
-        dtype = torch.cuda.FloatTensor if use_cuda else torch.FloatTensor
+        device = torch.device("cuda:{}".format(args.gpu_id) if use_cuda else "cpu")
 
         # Load training dataset
         train_dataset = model_utils.get_training_set(path=args.image_folder,
                                                      hr_size=args.hi_res_size,
                                                      upscale_factor=4)
-        if use_cuda:
-            train_data_loader = DataLoader(dataset=train_dataset,
-                                           num_workers=0,
-                                           batch_size=8,
-                                           shuffle=True)
-        else:
-            train_data_loader = DataLoader(dataset=train_dataset,
-                                           num_workers=0,
-                                           batch_size=1,
-                                           shuffle=True)
+        train_data_loader = DataLoader(dataset=train_dataset,
+                                       num_workers=0,
+                                       batch_size=(8 if use_cuda else 1),
+                                       shuffle=True,
+                                       drop_last=True)
+
 
         # Create VGG model for loss function
         vgg16 = models.vgg16(pretrained=True).features
-        if use_cuda:
-            vgg16.cuda(device=0)
+        vgg16.to(device)
 
-        vgg_loss = model_.create_loss_model(vgg16, 8, use_cuda=use_cuda)
+        vgg_loss = model_.create_loss_model(vgg16, 8, device)
 
         for param in vgg_loss.parameters():
             param.requires_grad = False # 也就是这里的VGG参数不更新
 
-        model = model_.SuperRes4x(use_cuda=use_cuda)
+        model = model_.SuperRes4x(device)
         optimizer = optim.Adam(model.parameters(), lr=args.l_rate)
-        train_SuperRes(model, optimizer, train_data_loader, use_cuda=use_cuda,
-                       epochs=args.trn_epochs, use_vgg_loss=False)
+        train_SuperRes(model, optimizer, train_data_loader, device,
+                       epochs=args.trn_epochs, use_vgg_loss=True)
 
     if args.mode == 'upsample':
         print ("\n *** INITIALIZING *** ")
@@ -212,6 +213,7 @@ if __name__ == '__main__':
 
 
 '''
+# 你在 spyder 里的调试信息
 debugfile('/home/ryan/code/SuperResolution/run.py', 
           wdir='/home/ryan/code/SuperResolution', 
           args='--mode train --image_folder /home/ryan/Dataset/VOCdevkit/VOC2007/JPEGImages --trn_epochs 1 --l_rate 0.01')

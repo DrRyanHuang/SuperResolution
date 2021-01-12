@@ -29,6 +29,11 @@ class DatasetFromFolder(torch.utils.data.Dataset):
 
     def __getitem__(self, index):
         input_ = load_img(self.image_filenames[index])
+        if input_.mode == 'L':
+            # 灰度图自动转化为RGB三通道图片
+            input_ = input_.convert("RGB")
+        if input_.mode not in ['L', 'RGB']:
+            raise ValueError("FUCKING DATASET : {}".format(self.image_filenames[index]))
         target = input_.copy()
         if self.input_transform is not None:
             input_ = self.input_transform(input_)
